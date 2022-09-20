@@ -7,6 +7,7 @@ Versions and changes-within-versions are listed in reverse-chronological order: 
 
 @{verRC("0.1.12")}
 + 2022/09/19: Added `accounts` field to `{!rsh} remote.ALGO`.
++ 2022/09/19: Added `{!js} account.appOptIn` and `{!js} account.appOptedIn`
 
 @{rcHead("0.1.12-rc.1")}
 
