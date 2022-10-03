@@ -892,7 +892,9 @@ solStateSet which svs = do
     setl
       <> [ solSet "current_step" (solNum which)
          , solSet "current_time" solBlockTime
-         , solSet "current_svbs" (solEncode ["nsvs"])
+         --, "delete current_svbs;"
+         , solSet ("current_svbs._state" <> pretty (show which)) "nsvs"
+         --, solSet "current_svbs" (solEncode ["nsvs"])
          ]
 
 solStateCheck :: Int -> App [(String, Doc)]
@@ -1418,7 +1420,8 @@ solHandler which h = freshVarMap $
           False -> do
             csv <- solStateCheck prev
             svs_ty' <- solAsnType svs
-            let csvs = [solSet (parens $ solDecl "_svs" (mayMemSol svs_ty')) $ solApply "abi.decode" ["current_svbs", parens svs_ty']]
+            --let csvs = [solSet (parens $ solDecl "_svs" (mayMemSol svs_ty')) $ solApply "abi.decode" ["current_svbs", parens svs_ty']]
+            let csvs = [solSet (parens $ solDecl "_svs" (mayMemSol svs_ty')) $ "current_svbs._state" <> pretty (which + 1)]
             return (csv, csvs, AM_Call, SFL_Function True (solMsg_fun which))
       let hc_go lab chk =
             (<> semi) <$> solRequire (checkMsg $ "state " <> lab) chk
@@ -1860,7 +1863,8 @@ solPLProg PLProg {plp_opts = plo, plp_init = dli, plp_cpprog = CPProg { cpp_at =
                 c' <- solEq "current_step" $ solNum i
                 let asnv = "vvs"
                 vvs_ty' <- solAsnType vvs
-                let de' = solSet (parens $ solDecl asnv (mayMemSol vvs_ty')) $ solApply "abi.decode" ["current_svbs", parens vvs_ty']
+                --let de' = solSet (parens $ solDecl asnv (mayMemSol vvs_ty')) $ solApply "abi.decode" ["current_svbs", parens vvs_ty']
+                let de' = solSet (parens $ solDecl asnv (mayMemSol vvs_ty')) $ "current_svbs._state" <> pretty i
                 extendVarMap $ M.fromList $ map (\vv -> (vv, asnv <> "." <> solRawVar vv)) $ vvs
                 extendVarMap $ M.fromList $ map (\(a, argI) -> (a, "_a.elem" <> pretty argI)) $ zip args ([0 ..] :: [Int])
                 (defn, ret') <-
@@ -1891,15 +1895,31 @@ solPLProg PLProg {plp_opts = plo, plp_init = dli, plp_cpprog = CPProg { cpp_at =
           return (keys, vsep bs)
     (view_jsons, view_defns) <- unzip <$> (mapM vgo $ M.toAscList vs)
     let view_json = concat view_jsons
+    let hsMap = case hs of
+          CHandlers x -> x
+    let handlerSvbs h = case h of
+            C_Handler {..} -> ch_svs
+            C_Loop {..} -> cl_svs
+    let handlerSvbsDataArm (step, h) =
+          ("state" <> show (step + 1), T_Struct $ map (\v -> (show $ solRawVar $ varLetVar v, varLetType v)) $ handlerSvbs h)
+    let svbsDataType_ = T_Data $ M.fromList $ map handlerSvbsDataArm $ M.toList hsMap
+    svbsDataType <- solType svbsDataType_
+    let currentStateArm (step, _handler) =
+          "  if (current_step == " <> pretty (show $ step + 1)
+            <> "){current_svbs_bytes = abi.encode(current_svbs._state" <> pretty (show $ step + 1) <> ");}"
+    let currentStateArms = map currentStateArm $ M.toList hsMap
+    let currentStateFunc = "function _reachCurrentState() external view returns (uint256, bytes memory) { bytes memory current_svbs_bytes; " <> vsep currentStateArms <> "  return (current_step, current_svbs_bytes); }"
     let state_defn =
           vsep $
             [ "uint256 current_step;"
             , "uint256 current_time;"
-            , "  bytes current_svbs;"
+            --, "  bytes current_svbs;"
+            , svbsDataType <> " current_svbs;"
             , "uint256 creation_time;"
             , "function _reachCreationTime() external view returns (uint256) { return creation_time; }"
             , "function _reachCurrentTime() external view returns (uint256) { return current_time; }"
-            , "function _reachCurrentState() external view returns (uint256, bytes memory) { return (current_step, current_svbs); }"
+            , currentStateFunc
+            --, "function _reachCurrentState() external view returns (uint256, bytes memory) { return (current_step, current_svbs); }"
             ]
               <> map_defns
               <> view_defns
