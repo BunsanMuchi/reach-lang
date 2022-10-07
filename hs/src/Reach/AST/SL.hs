@@ -52,7 +52,7 @@ data SLTypeFun = SLTypeFun
   , stf_pre_msg :: Maybe SLVal
   , stf_post_msg :: Maybe SLVal
   }
-  deriving (Eq, Generic)
+  deriving (Eq, Generic, Show)
 
 instance Show SLType where
   show = \case
